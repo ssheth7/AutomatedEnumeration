@@ -1,5 +1,5 @@
 #!/usr/bin/bash
-#Todo: filter /tcp from ports, get command array working
+
 echo '         -----Automated Enumeration-----'
 if [ $# -eq 0 ]
     then echo -e '\e[33mUsage: ./AutomatedEnumeration.sh xx.xx.xx.xx';
@@ -23,34 +23,46 @@ echo -e '\e[32mResults saved to nmap.txt'
 echo -e '\e[32mInitial enumeration completed(First 1000 Ports)...\e[37m'
 #Formats nmap output into array
 PORTLISTSTR=$(cat nmap.txt | tail -n +6 | head -n -3 |  grep '^[0-9]') 
-#declare -a myArray
-myArray=($PORTLISTSTR)
 NUM=$(echo "${PORTLISTSTR[@]}" | wc -l )
-for i in $NUM
-do  
-    PORTLIST=($( echo "${PORTLISTSTR[@]}" | head -n $NUM | awk {'print $1 "\t" $3'}))
+PORTLIST=()
+for (( i = 1; i <= $NUM; i++ ))
+do 
+    if [ $(echo "${PORTLISTSTR[@]}" | sed -n "${i}p" | awk {'print $2'}) == "open" ]; then
+    echo "${PORTLISTSTR[@]}" | sed -n "${i}p" | awk {'print $1 "\t" $3'}
+    PORTLIST+=($( echo "${PORTLISTSTR[@]}" | sed -n "${i}p" | awk {'print $1 "\t" $3'}))
+    fi
 done 
-echo "${PORTLIST[@]}"
+echo Debugging: "${PORTLIST[@]}"
 echo -e '\e[32mEnumerable Ports\e[37m'
-((NUM++))
 CMD=()
+((NUM*=2))
 for (( i = 1; i <= $NUM; i+=2 )) 
 do
+    PORTLIST[$i-1]=$(echo "${PORTLIST[$i-1]}" | grep -Eo '[0-9]+')
     echo Service: "${PORTLIST[$i]}" running on port "${PORTLIST[$i-1]}"
     case ${PORTLIST[$i]} in
     ssh)
-        printf '\e[33m  Bruteforcable - Example: hydra -L users.txt -P passwords.txt ssh://' && printf "$1:" && printf "${PORTLIST[$i-1]}" | grep -Eo '[0-9]{1,4"}';printf '\n%s\e[37m'
+        printf '\e[33m  Bruteforcable - Example: hydra -L users.txt -P passwords.txt ssh://' && printf "$1:" && printf "${PORTLIST[$i-1]}" | grep -Eo '[0-9]{1,"}';printf '\n%s\e[37m'
     ;;
     ftp)
-        printf '  FTP found'
-        $CMD+="curl ftp://$1/* --user anonymous:anonymous"
+        if curl ftp://10.10.10.187/* --user anonymous:anonymous -s
+        then
+            printf '  \e[32Anonymous Access allowed\e[37m\n'
+        else 
+            printf '  \e[31mAnonymous Access denied. No files found.\e[37m\n'
+        fi
     ;;
     http)
-        printf '\e[32m  Enumerable with gobuster\n'
-        CMD+=("gobuster dir -u http://$1:${PORTLIST[$i-1]} -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt")
+        printf '\e[32m  Enumerable with gobuster \e[37m\n'
+        CMD+=("gobuster dir -u http://$1:${PORTLIST[$i-1]} -q -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -o ./gobusterp:${PORTLIST[$i-1]}.txt 1&>/dev/null ")
     ;;
     esac
 done
-echo $CMD
+printf '\e[32mEnumerating through nmap results!\e[37m\n'
+for (( i = 0; i < ${#CMD[@]}; i++))
+do 
+    echo ${CMD[$i]}
+    eval ${CMD[$i]}
+done
 exit
 
