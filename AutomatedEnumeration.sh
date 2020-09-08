@@ -12,13 +12,13 @@ if ping -c 1 -W 1 >/dev/null $1
     then echo  -e '\e[32mHost is up. Starting initial Host enumeration...\e[37m'
     else echo  -e '\e[31mHost is down\e[37m'; exit
 fi  
-if [ ! -f './nmap.txt' ]; then 
+#if [ ! -f './nmap.txt' ]; then 
 if nmap -sC -sV -oN nmap.txt $1
     then  cat nmap.txt
     else  echo -e '\e33mHost does not accept pings, using option -Pn'
     nmap -sC -sV -oN nmap.txt $1 -Pn
     fi
-fi
+#fi
 echo -e '\e[32mResults saved to nmap.txt'
 echo -e '\e[32mInitial enumeration completed(First 1000 Ports)...\e[37m'
 #Formats nmap output into array
@@ -32,13 +32,15 @@ do
     PORTLIST+=($( echo "${PORTLISTSTR[@]}" | sed -n "${i}p" | awk {'print $1 "\t" $3'}))
     fi
 done 
-echo Debugging: "${PORTLIST[@]}"
 echo -e '\e[32mEnumerable Ports\e[37m'
 CMD=()
 ((NUM*=2))
 for (( i = 1; i <= $NUM; i+=2 )) 
 do
     PORTLIST[$i-1]=$(echo "${PORTLIST[$i-1]}" | grep -Eo '[0-9]+')
+    if [ -z "${PORTLIST[$i-1]}" ]; then
+        break;
+    fi
     echo Service: "${PORTLIST[$i]}" running on port "${PORTLIST[$i-1]}"
     case ${PORTLIST[$i]} in
     ssh)
@@ -47,20 +49,31 @@ do
     ftp)
         if curl ftp://10.10.10.187/* --user anonymous:anonymous -s
         then
-            printf '  \e[32Anonymous Access allowed\e[37m\n'
+            printf '  \e[32mFTP Anonymous Access allowed. \e[37m\n'
         else 
-            printf '  \e[31mAnonymous Access denied. No files found.\e[37m\n'
+            printf '  \e[31mFTP Anonymous Guest denied. No files found.\e[37m\n'
         fi
     ;;
     http)
         printf '\e[32m  Enumerable with gobuster \e[37m\n'
-        CMD+=("gobuster dir -u http://$1:${PORTLIST[$i-1]} -q -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -o ./gobusterp:${PORTLIST[$i-1]}.txt 1&>/dev/null ")
+        CMD+=("gobuster dir -u http://$1:${PORTLIST[$i-1]} -q -w /usr/share/wordlists/dirbuster/directory-list-2.3-small.txt -o ./gobusterp:${PORTLIST[$i-1]}.txt & ")
     ;;
+    smb)
+        if smbclient -N -L \\\\$1\\ -p ${PORTLIST[$i-1]}
+        then
+            printf '  \e[32mSMB Anonymous Access allowed. \e[37m\n'
+        else
+            printf '  \e[31mSMB Guest Access denied. No files found.\e[37m\n'
+        fi
+        ;;
     esac
 done
-printf '\e[32mEnumerating through nmap results!\e[37m\n'
+
 for (( i = 0; i < ${#CMD[@]}; i++))
 do 
+    if($i -eq 0)
+    then printf '\e[32mEnumerating through nmap results!\e[37m\n'
+    fi
     echo ${CMD[$i]}
     eval ${CMD[$i]}
 done
